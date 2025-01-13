@@ -242,7 +242,5 @@ def ws_route(ws):
             ws.send(json.dumps(data[-1]))  # Send the latest record
         time.sleep(1)
 
-if __name__ == "__main__":
-    app.run(debug=True)
 
 
