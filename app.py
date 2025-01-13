@@ -159,12 +159,14 @@
 
 # # Initialize background thread when the app is imported
 # start_background_thread()
+
+
+
 from flask import Flask, jsonify
 from flask_sock import Sock
 import json
-import asyncio
 import threading
-import websockets
+import websocket
 from datetime import datetime
 import pytz
 
@@ -177,32 +179,46 @@ cache = {}
 # Timezone for IST
 IST = pytz.timezone("Asia/Kolkata")
 
-async def coinbase_ws():
-    url = "wss://ws-feed.exchange.coinbase.com"
-    async with websockets.connect(url) as websocket:
-        subscribe_message = {
-            "type": "subscribe",
-            "channels": [{"name": "ticker", "product_ids": ["BTC-USD"]}]
+# WebSocket callback function for receiving messages
+def on_message(ws, message):
+    data = json.loads(message)
+    if "price" in data:
+        # Create a record with price and timestamp
+        record = {
+            "price": data["price"],
+            "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
         }
-        await websocket.send(json.dumps(subscribe_message))
-        while True:
-            message = await websocket.recv()
-            data = json.loads(message)
-            if "price" in data:
-                # Create a record with price and timestamp
-                record = {
-                    "price": data["price"],
-                    "timestamp": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
-                }
-                # Append to the cache for BTC-USD
-                if "BTC-USD" not in cache:
-                    cache["BTC-USD"] = []
-                cache["BTC-USD"].append(record)
+        # Append to the cache for BTC-USD
+        if "BTC-USD" not in cache:
+            cache["BTC-USD"] = []
+        cache["BTC-USD"].append(record)
+
+# WebSocket callback function for error handling
+def on_error(ws, error):
+    print("Error:", error)
+
+# WebSocket callback function for closing the connection
+def on_close(ws, close_status_code, close_msg):
+    print("Closed connection")
+
+# WebSocket callback function for opening the connection
+def on_open(ws):
+    subscribe_message = {
+        "type": "subscribe",
+        "channels": [{"name": "ticker", "product_ids": ["BTC-USD"]}]
+    }
+    ws.send(json.dumps(subscribe_message))
 
 def start_coinbase_ws():
-    asyncio.run(coinbase_ws())
+    url = "wss://ws-feed.exchange.coinbase.com"
+    ws = websocket.WebSocketApp(url,
+                                on_message=on_message,
+                                on_error=on_error,
+                                on_close=on_close)
+    ws.on_open = on_open
+    ws.run_forever()
 
-# Start WebSocket listener
+# Start WebSocket listener in a separate thread
 thread = threading.Thread(target=start_coinbase_ws, daemon=True)
 thread.start()
 
@@ -224,6 +240,9 @@ def ws_route(ws):
         data = cache.get("BTC-USD", [])
         if data:
             ws.send(json.dumps(data[-1]))  # Send the latest record
-        asyncio.sleep(1)
+        time.sleep(1)
+
+if __name__ == "__main__":
+    app.run(debug=True)
 
 
